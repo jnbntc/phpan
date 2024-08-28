@@ -50,6 +50,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
         $recipes[$recipeName] = ['ingredients' => array_map(function($data) { return $data['value']; }, $ingredients)];
+
+        // Guardar costes de los ingredientes (opcional)
+        if (isset($_POST['ingredient_cost'])) {
+            $recipes[$recipeName]['ingredient_costs'] = $_POST['ingredient_cost'];
+        }
+
         if (saveRecipes($recipes)) {
             header('Location: index.php');
             exit;
@@ -107,6 +113,16 @@ if (isset($_GET['recipe']) && isset($recipes[$_GET['recipe']])) {
                                     <input type="checkbox" name="is_percentage[]" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
                                     <span class="ml-2 text-sm text-gray-600">%</span>
                                 </label>
+
+                                <?php 
+                                // Mostrar campo para el coste del ingrediente (opcional)
+                                if (isset($editingRecipe['ingredient_costs'][$ingredient])) {
+                                    echo '<input type="number" name="ingredient_cost[' . htmlspecialchars($ingredient) . ']" placeholder="Coste" step="0.01" class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" value="' . htmlspecialchars($editingRecipe['ingredient_costs'][$ingredient]) . '">';
+                                } else {
+                                    echo '<input type="number" name="ingredient_cost[' . htmlspecialchars($ingredient) . ']" placeholder="Coste" step="0.01" class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">';
+                                }
+                                ?>
+
                                 <button type="button" onclick="removeIngredient(this)" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">-</button>
                             </div>
                         <?php endforeach; ?>
@@ -118,6 +134,7 @@ if (isset($_GET['recipe']) && isset($recipes[$_GET['recipe']])) {
                                 <input type="checkbox" name="is_percentage[]" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
                                 <span class="ml-2 text-sm text-gray-600">%</span>
                             </label>
+                            <input type="number" name="ingredient_cost[]" placeholder="Coste" step="0.01" class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
                             <button type="button" onclick="removeIngredient(this)" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">-</button>
                         </div>
                     <?php endif; ?>
@@ -160,6 +177,7 @@ if (isset($_GET['recipe']) && isset($recipes[$_GET['recipe']])) {
                 <input type="checkbox" name="is_percentage[]" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
                 <span class="ml-2 text-sm text-gray-600">%</span>
             </label>
+            <input type="number" name="ingredient_cost[]" placeholder="Coste" step="0.01" class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
             <button type="button" onclick="removeIngredient(this)" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">-</button>
         `;
         ingredientsDiv.appendChild(newRow);

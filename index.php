@@ -4,6 +4,12 @@ require_once 'funciones.php';
 session_start();
 $recipes = loadRecipes();
 
+// Buscar recetas (si se envió el formulario de búsqueda)
+if (isset($_GET['search'])) {
+    $searchTerm = $_GET['search'];
+    $recipes = searchRecipes($recipes, $searchTerm);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $errors = [];
 
@@ -20,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
         $recipe = $recipes[$selectedRecipe];
-        $totalWeight = $unitWeight * $quantity;
+        $totalWeight = $unitWeight * $quantity; // El peso total siempre estará en gramos
         $ingredients = [];
 
         foreach ($recipe['ingredients'] as $ingredient => $percentage) {
@@ -34,6 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'total_weight' => round($totalWeight),
             'ingredients' => $ingredients
         ];
+
+        // Guardar la receta calculada (opcional)
+        // ... (código para guardar la receta en un archivo o base de datos)
 
         header('Location: index.php');
         exit;
@@ -53,6 +62,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden md:max-w-2xl">
         <div class="p-8">
             <h1 class="text-2xl font-bold mb-4">Calculadora de Masas para Panadería</h1>
+
+            <form method="get" class="space-y-4 mb-4">
+                <div class="flex items-center">
+                    <input type="text" name="search" placeholder="Buscar receta por nombre o ingrediente..." class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                    <button type="submit" class="ml-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Buscar</button>
+                </div>
+            </form>
+
             <form method="post" class="space-y-4">
                 <div>
                     <label for="recipe" class="block text-sm font-medium text-gray-700">Seleccionar Receta:</label>
@@ -92,6 +109,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <p>Cantidad: <?= $_SESSION['calculated_recipe']['quantity'] ?></p>
                     <p>Peso por unidad: <?= $_SESSION['calculated_recipe']['unit_weight'] ?> g</p>
                     <p>Peso Total: <span id="total-weight"><?= $_SESSION['calculated_recipe']['total_weight'] ?></span> g</p>
+
+                    <?php 
+                    // Calcular el coste de la receta (opcional)
+                    $totalCost = 0; // Inicializar el coste total
+                    $costPerUnit = 0;
+                    if (isset($recipes[$_SESSION['calculated_recipe']['name']]['ingredient_costs'])) {
+                        $totalCost = calculateRecipeCost($recipes[$_SESSION['calculated_recipe']['name']]['ingredients'], $recipes[$_SESSION['calculated_recipe']['name']]['ingredient_costs'], $_SESSION['calculated_recipe']['total_weight']);
+                        $costPerUnit = $totalCost / $_SESSION['calculated_recipe']['quantity']; // Calcular coste por unidad
+                    }
+                    ?>
+
+                    <p>Coste por unidad: $<?= number_format($costPerUnit, 2) ?></p>
+                    <p>Coste total: $<?= number_format($totalCost, 2) ?></p>
+
                     <h3 class="font-semibold mt-4 mb-2">Ingredientes:</h3>
                     <ul class="list-disc list-inside" id="ingredients-list">
                         <?php foreach ($_SESSION['calculated_recipe']['ingredients'] as $ingredient => $weight): ?>
@@ -112,30 +143,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <script>
-    function exportToTXT() {
-        const results = document.getElementById('results');
-        const title = results.querySelector('h2').textContent;
-        const recipeName = results.querySelector('p').textContent;
-        const quantity = results.querySelectorAll('p')[1].textContent;
-        const unitWeight = results.querySelectorAll('p')[2].textContent;
-        const totalWeight = results.querySelectorAll('p')[3].textContent;
-        const ingredientsList = Array.from(results.querySelectorAll('ul li')).map(li => li.textContent).join('\n');
+        function exportToTXT() {
+            const results = document.getElementById('results');
+            const title = results.querySelector('h2').textContent;
+            const recipeName = results.querySelector('p').textContent;
+            const quantity = results.querySelectorAll('p')[1].textContent;
+            const unitWeight = results.querySelectorAll('p')[2].textContent;
+            const totalWeight = results.querySelectorAll('p')[3].textContent;
+            const costPerUnit = results.querySelectorAll('p')[4].textContent; // Coste por unidad
+            const totalCost = results.querySelectorAll('p')[5].textContent; // Coste total
+            const ingredientsList = Array.from(results.querySelectorAll('ul li')).map(li => li.textContent).join('\n');
 
-        let content = `${title}\n\n`;
-        content += `${recipeName}\n`;
-        content += `${quantity}\n`;
-        content += `${unitWeight}\n`;
-        content += `${totalWeight}\n\n`;
-        content += `Ingredientes:\n${ingredientsList}`;
 
-        const blob = new Blob([content], { type: 'text/plain' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'receta.txt';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-    }
+            let content = `${title}\n\n`;
+            content += `${recipeName}\n`;
+            content += `${quantity}\n`;
+            content += `${unitWeight}\n`;
+            content += `${totalWeight}\n\n`;
+            content += `Ingredientes:\n${ingredientsList}\n\n`;
+            content += `${costPerUnit}\n`; // Incluir coste por unidad
+            content += `${totalCost}\n`; // Incluir coste total
+
+            const blob = new Blob([content], { type: 'text/plain' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'receta.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
     </script>
 </body>
 </html>

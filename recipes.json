@@ -9,6 +9,16 @@
             "Sal": 1,
             "Leche en polvo": 3,
             "Manteca": 5
+        },
+        "ingredient_costs": {
+            "Harina": "750",
+            "Agua": "10",
+            "Levadura": "1200",
+            "Pure de papas": "1000",
+            "Azucar": "1500",
+            "Sal": "500",
+            "Leche en polvo": "4000",
+            "Manteca": "10000"
         }
     },
     "Pan de masa madre": {

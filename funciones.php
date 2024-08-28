@@ -31,23 +31,37 @@ function saveRecipes($recipes) {
     return true;
 }
 
-function calculateRecipe($recipe, $unitWeight, $quantity) {
-    $totalWeight = $unitWeight * $quantity;
-    $ingredients = [];
-
-    foreach ($recipe['ingredients'] as $ingredient => $percentage) {
-        $ingredients[$ingredient] = round($totalWeight * ($percentage / 100));
-    }
-
-    return [
-        'name' => $recipe['name'],
-        'unit_weight' => $unitWeight,
-        'quantity' => $quantity,
-        'total_weight' => round($totalWeight),
-        'ingredients' => $ingredients
-    ];
+function calculateTotalWeight($unitWeight, $quantity) {
+    return $unitWeight * $quantity;
 }
 
-// ... (otras funciones relacionadas con las recetas)
+function searchRecipes($recipes, $searchTerm) {
+    $searchResults = [];
+    foreach ($recipes as $name => $recipe) {
+        if (stripos($name, $searchTerm) !== false) {
+            $searchResults[$name] = $recipe;
+            continue;
+        }
+        foreach ($recipe['ingredients'] as $ingredient => $percentage) {
+            if (stripos($ingredient, $searchTerm) !== false) {
+                $searchResults[$name] = $recipe;
+                break;
+            }
+        }
+    }
+    return $searchResults;
+}
 
-?>
+function calculateRecipeCost($ingredients, $ingredientCosts, $totalWeight) {
+    $totalCost = 0;
+    foreach ($ingredients as $ingredient => $percentage) {
+        if (isset($ingredientCosts[$ingredient])) {
+            $ingredientWeight = ($percentage / 100) * $totalWeight;
+            // El coste está en precio por Kg, así que se divide entre 1000 para obtener el precio por gramo
+            $totalCost += $ingredientWeight * ($ingredientCosts[$ingredient] / 1000); 
+        }
+    }
+    return $totalCost;
+}
+
+// ... (otras funciones)
