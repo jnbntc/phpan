@@ -143,11 +143,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <li><?= htmlspecialchars($ingredient) ?>: <?= $weight ?> g</li>
                         <?php endforeach; ?>
                     </ul>
-                    <button onclick="exportToTXT()" class="mt-4 bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                    <button id="exportButton" class="mt-4 bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded" 
+                        data-recipe-name="<?= htmlspecialchars($calculatedRecipe['name']) ?>" 
+                        data-quantity="<?= $calculatedRecipe['quantity'] ?>"
+                        data-unit-weight="<?= $calculatedRecipe['unit_weight'] ?>"
+                        data-total-weight="<?= $calculatedRecipe['total_weight'] ?>"
+                        data-cost-per-unit="<?= number_format($costPerUnit, 2) ?>"
+                        data-total-cost="<?= number_format($totalCost, 2) ?>"
+                        data-ingredients='<?= json_encode($calculatedRecipe['ingredients']) ?>'
+                        data-ingredient-costs='<?= isset($recipes[$calculatedRecipe['name']]['ingredient_costs']) ? json_encode($recipes[$calculatedRecipe['name']]['ingredient_costs']) : '[]' ?>'>
                         Exportar a TXT
                     </button>
                 </div>
-                <?php unset($_SESSION['calculated_recipe']); ?>
             <?php endif; ?>
 
             <a href="edit_recipe.php" class="block mt-4 text-center bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
@@ -157,20 +164,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <script>
-        function exportToTXT() {
-            const results = document.getElementById('results');
-            const title = results.querySelector('h2').textContent;
-            const recipeName = results.querySelectorAll('.mb-2')[0].querySelectorAll('span')[1].textContent; // Receta
-            const quantity = results.querySelectorAll('.mb-2')[1].querySelectorAll('span')[1].textContent; // Cantidad
-            const unitWeight = results.querySelectorAll('.mb-2')[2].querySelectorAll('span')[1].textContent; // Peso por unidad
-            const totalWeight = results.querySelectorAll('.mb-2')[3].querySelectorAll('span')[1].textContent; // Peso total
-            const costPerUnit = results.querySelectorAll('.mb-2')[4].querySelectorAll('span')[1].textContent; // Coste por unidad
-            const totalCost = results.querySelectorAll('.mb-2')[5].querySelectorAll('span')[1].textContent; // Coste total
-            
-            let ingredientsList = '';
-            const ingredients = <?php echo json_encode($calculatedRecipe['ingredients']); ?>; // Usar la variable local
-            const ingredientCosts = <?php echo json_encode($recipes[<?= json_encode($calculatedRecipe['name']) ?>]['ingredient_costs'] ?? []); ?>;
+        document.getElementById('exportButton').addEventListener('click', function() {
+            const button = this; // Referencia al botón actual
 
+            const title = "Resultado";
+            const recipeName = button.getAttribute('data-recipe-name');
+            const quantity = button.getAttribute('data-quantity');
+            const unitWeight = button.getAttribute('data-unit-weight') + " g";
+            const totalWeight = button.getAttribute('data-total-weight') + " g";
+            const costPerUnit = button.getAttribute('data-cost-per-unit');
+            const totalCost = button.getAttribute('data-total-cost');
+
+            const ingredients = JSON.parse(button.getAttribute('data-ingredients'));
+            const ingredientCosts = JSON.parse(button.getAttribute('data-ingredient-costs'));
+
+            let ingredientsList = '';
             for (const ingredient in ingredients) {
                 const weight = ingredients[ingredient];
                 let ingredientLine = `${ingredient}: ${weight} g`;
@@ -188,10 +196,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             content += `${recipeName}\n`;
             content += `${quantity}\n`;
             content += `${unitWeight}\n`;
-            content += `${totalWeight}\n\n`;
-            content += `Ingredientes:\n${ingredientsList}\n`;
-            content += `${costPerUnit}\n`; // Incluir coste por unidad
-            content += `${totalCost}\n`; // Incluir coste total
+            content += `${totalWeight}\n`;
+            content += `${costPerUnit}\n`;
+            content += `${totalCost}\n`;
+            content += `\nIngredients:\n${ingredientsList}`;
 
             const blob = new Blob([content], { type: 'text/plain' });
             const a = document.createElement('a');
@@ -200,7 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-        }
+        });
     </script>
 </body>
 </html>
