@@ -19,7 +19,7 @@ Esta aplicación PHP te permite calcular con precisión la cantidad de ingredien
 ## Uso
 
 1. Selecciona una receta de masa del menú desplegable.
-2. Introduce el peso por pieza (en gramos) o la cantidad de piezas que deseas elaborar.
+2. Introduce el peso por pieza (en gramos) y la cantidad de piezas que deseas elaborar.
 3. Haz clic en "Calcular".
 4. Los resultados se mostrarán debajo del formulario, incluyendo el peso total de la masa y la cantidad de cada ingrediente.
 5. Puedes exportar la receta a un archivo TXT haciendo clic en "Exportar a TXT".
