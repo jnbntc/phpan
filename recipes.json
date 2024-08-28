@@ -10,5 +10,11 @@
             "Leche en polvo": 3,
             "Manteca": 5
         }
+    },
+    "Pan de masa madre": {
+        "ingredients": {
+            "Harina": 60,
+            "Agua": 40
+        }
     }
 }

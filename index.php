@@ -1,31 +1,43 @@
 <?php
-// index.php
+require_once 'funciones.php';
+
 session_start();
-$recipes = json_decode(file_get_contents('recipes.json'), true);
+$recipes = loadRecipes();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $errors = [];
+
     $selectedRecipe = $_POST['recipe'];
     $unitWeight = floatval($_POST['unit_weight']);
     $quantity = intval($_POST['quantity']);
-    
-    $recipe = $recipes[$selectedRecipe];
-    $totalWeight = $unitWeight * $quantity;
-    $ingredients = [];
-    
-    foreach ($recipe['ingredients'] as $ingredient => $percentage) {
-        $ingredients[$ingredient] = round($totalWeight * ($percentage / 100));
+
+    if ($unitWeight <= 0) {
+        $errors[] = "El peso por unidad debe ser un número positivo.";
     }
-    
-    $_SESSION['calculated_recipe'] = [
-        'name' => $selectedRecipe,
-        'unit_weight' => $unitWeight,
-        'quantity' => $quantity,
-        'total_weight' => round($totalWeight),
-        'ingredients' => $ingredients
-    ];
-    
-    header('Location: index.php');
-    exit;
+    if ($quantity <= 0) {
+        $errors[] = "La cantidad debe ser un número positivo.";
+    }
+
+    if (empty($errors)) {
+        $recipe = $recipes[$selectedRecipe];
+        $totalWeight = $unitWeight * $quantity;
+        $ingredients = [];
+
+        foreach ($recipe['ingredients'] as $ingredient => $percentage) {
+            $ingredients[$ingredient] = round($totalWeight * ($percentage / 100));
+        }
+
+        $_SESSION['calculated_recipe'] = [
+            'name' => $selectedRecipe,
+            'unit_weight' => $unitWeight,
+            'quantity' => $quantity,
+            'total_weight' => round($totalWeight),
+            'ingredients' => $ingredients
+        ];
+
+        header('Location: index.php');
+        exit;
+    }
 }
 ?>
 
@@ -34,13 +46,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calculadora de Recetas</title>
+    <title>Calculadora de Masas para Panadería</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100 p-8">
     <div class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden md:max-w-2xl">
         <div class="p-8">
-            <h1 class="text-2xl font-bold mb-4">Calculadora de Recetas</h1>
+            <h1 class="text-2xl font-bold mb-4">Calculadora de Masas para Panadería</h1>
             <form method="post" class="space-y-4">
                 <div>
                     <label for="recipe" class="block text-sm font-medium text-gray-700">Seleccionar Receta:</label>
@@ -62,7 +74,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     Calcular
                 </button>
             </form>
-            
+
+            <?php if (isset($errors)): ?>
+                <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4" role="alert">
+                    <ul>
+                        <?php foreach ($errors as $error): ?>
+                            <li><?= htmlspecialchars($error) ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+            <?php endif; ?>
+
             <?php if (isset($_SESSION['calculated_recipe'])): ?>
                 <div id="results" class="mt-8">
                     <h2 class="text-xl font-semibold mb-2">Resultado:</h2>
@@ -82,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <?php unset($_SESSION['calculated_recipe']); ?>
             <?php endif; ?>
-            
+
             <a href="edit_recipe.php" class="block mt-4 text-center bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
                 Editar/Crear Receta
             </a>
