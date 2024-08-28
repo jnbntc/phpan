@@ -41,9 +41,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'ingredients' => $ingredients
         ];
 
-        // Guardar la receta calculada (opcional)
-        // ... (código para guardar la receta en un archivo o base de datos)
-
         header('Location: index.php');
         exit;
     }
@@ -102,31 +99,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             <?php endif; ?>
 
-            <?php if (isset($_SESSION['calculated_recipe'])): ?>
-                <div id="results" class="mt-8">
-                    <h2 class="text-xl font-semibold mb-2">Resultado:</h2>
-                    <p>Receta: <?= htmlspecialchars($_SESSION['calculated_recipe']['name']) ?></p>
-                    <p>Cantidad: <?= $_SESSION['calculated_recipe']['quantity'] ?></p>
-                    <p>Peso por unidad: <?= $_SESSION['calculated_recipe']['unit_weight'] ?> g</p>
-                    <p>Peso Total: <span id="total-weight"><?= $_SESSION['calculated_recipe']['total_weight'] ?></span> g</p>
-
-                    <?php 
+            <?php if (isset($_SESSION['calculated_recipe'])): 
+                $calculatedRecipe = $_SESSION['calculated_recipe']; // Almacenar la receta en una variable local
+                ?>
+                <div id="results" class="mt-8 border border-gray-300 rounded p-6">
+                    <h2 class="text-xl font-semibold mb-4">Resultado:</h2>
+                    <div class="mb-2">
+                        <span class="font-medium"><strong>Receta:</strong></span>
+                        <span><?= htmlspecialchars($calculatedRecipe['name']) ?></span>
+                    </div>
+                    <div class="mb-2">
+                        <span class="font-medium"><strong>Cantidad:</strong></span>
+                        <span><?= $calculatedRecipe['quantity'] ?></span>
+                    </div>
+                    <div class="mb-2">
+                        <span class="font-medium"><strong>Peso por unidad:</strong></span>
+                        <span><?= $calculatedRecipe['unit_weight'] ?> g</span>
+                    </div>
+                    <div class="mb-2">
+                        <span class="font-medium"><strong>Peso Total:</strong></span>
+                        <span><?= $calculatedRecipe['total_weight'] ?> g</span>
+                    </div>
+                    <?php
                     // Calcular el coste de la receta (opcional)
                     $totalCost = 0; // Inicializar el coste total
                     $costPerUnit = 0;
-                    if (isset($recipes[$_SESSION['calculated_recipe']['name']]['ingredient_costs'])) {
-                        $totalCost = calculateRecipeCost($recipes[$_SESSION['calculated_recipe']['name']]['ingredients'], $recipes[$_SESSION['calculated_recipe']['name']]['ingredient_costs'], $_SESSION['calculated_recipe']['total_weight']);
-                        $costPerUnit = $totalCost / $_SESSION['calculated_recipe']['quantity']; // Calcular coste por unidad
+                    if (isset($recipes[$calculatedRecipe['name']]['ingredient_costs'])) {
+                        $totalCost = calculateRecipeCost($recipes[$calculatedRecipe['name']]['ingredients'], $recipes[$calculatedRecipe['name']]['ingredient_costs'], $calculatedRecipe['total_weight']);
+                        $costPerUnit = $totalCost / $calculatedRecipe['quantity']; // Calcular coste por unidad
                     }
                     ?>
-
-                    <p>Coste por unidad: $<?= number_format($costPerUnit, 2) ?></p>
-                    <p>Coste total: $<?= number_format($totalCost, 2) ?></p>
-
+                    <div class="mb-2">
+                        <span class="font-medium"><strong>Coste por unidad:</strong></span>
+                        <span>$<?= number_format($costPerUnit, 2) ?></span>
+                    </div>
+                    <div class="mb-4">
+                        <span class="font-medium"><strong>Coste total:</strong></span>
+                        <span>$<?= number_format($totalCost, 2) ?></span>
+                    </div>
                     <h3 class="font-semibold mt-4 mb-2">Ingredientes:</h3>
                     <ul class="list-disc list-inside" id="ingredients-list">
-                        <?php foreach ($_SESSION['calculated_recipe']['ingredients'] as $ingredient => $weight): ?>
-                            <li><span class="ingredient-name"><?= htmlspecialchars($ingredient) ?></span>: <span class="ingredient-weight"><?= $weight ?></span> g</li>
+                        <?php foreach ($calculatedRecipe['ingredients'] as $ingredient => $weight): ?>
+                            <li><?= htmlspecialchars($ingredient) ?>: <?= $weight ?> g</li>
                         <?php endforeach; ?>
                     </ul>
                     <button onclick="exportToTXT()" class="mt-4 bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
@@ -146,21 +160,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         function exportToTXT() {
             const results = document.getElementById('results');
             const title = results.querySelector('h2').textContent;
-            const recipeName = results.querySelector('p').textContent;
-            const quantity = results.querySelectorAll('p')[1].textContent;
-            const unitWeight = results.querySelectorAll('p')[2].textContent;
-            const totalWeight = results.querySelectorAll('p')[3].textContent;
-            const costPerUnit = results.querySelectorAll('p')[4].textContent; // Coste por unidad
-            const totalCost = results.querySelectorAll('p')[5].textContent; // Coste total
-            const ingredientsList = Array.from(results.querySelectorAll('ul li')).map(li => li.textContent).join('\n');
+            const recipeName = results.querySelectorAll('.mb-2')[0].querySelectorAll('span')[1].textContent; // Receta
+            const quantity = results.querySelectorAll('.mb-2')[1].querySelectorAll('span')[1].textContent; // Cantidad
+            const unitWeight = results.querySelectorAll('.mb-2')[2].querySelectorAll('span')[1].textContent; // Peso por unidad
+            const totalWeight = results.querySelectorAll('.mb-2')[3].querySelectorAll('span')[1].textContent; // Peso total
+            const costPerUnit = results.querySelectorAll('.mb-2')[4].querySelectorAll('span')[1].textContent; // Coste por unidad
+            const totalCost = results.querySelectorAll('.mb-2')[5].querySelectorAll('span')[1].textContent; // Coste total
+            
+            let ingredientsList = '';
+            const ingredients = <?php echo json_encode($calculatedRecipe['ingredients']); ?>; // Usar la variable local
+            const ingredientCosts = <?php echo json_encode($recipes[<?= json_encode($calculatedRecipe['name']) ?>]['ingredient_costs'] ?? []); ?>;
 
+            for (const ingredient in ingredients) {
+                const weight = ingredients[ingredient];
+                let ingredientLine = `${ingredient}: ${weight} g`;
+
+                if (ingredientCosts[ingredient]) {
+                    const ingredientCost = ingredientCosts[ingredient];
+                    const ingredientTotalCost = (weight / 1000) * ingredientCost;
+                    ingredientLine += ` - $${ingredientTotalCost.toFixed(2)}`;
+                }
+
+                ingredientsList += `${ingredientLine}\n`;
+            }
 
             let content = `${title}\n\n`;
             content += `${recipeName}\n`;
             content += `${quantity}\n`;
             content += `${unitWeight}\n`;
             content += `${totalWeight}\n\n`;
-            content += `Ingredientes:\n${ingredientsList}\n\n`;
+            content += `Ingredientes:\n${ingredientsList}\n`;
             content += `${costPerUnit}\n`; // Incluir coste por unidad
             content += `${totalCost}\n`; // Incluir coste total
 
