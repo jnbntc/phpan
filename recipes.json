@@ -1,4 +1,31 @@
 {
+  "ingredients": {
+    "Harina": {
+      "price": 2.50
+    },
+    "Agua": {
+      "price": 0.00
+    },
+    "Levadura": {
+      "price": 8.00
+    },
+    "Sal": {
+      "price": 1.00
+    },
+    "Azúcar": {
+      "price": 3.00
+    },
+    "Leche": {
+      "price": 4.00
+    },
+    "Harina Integral": {
+      "price": 3.50
+    },
+    "Aceite": {
+      "price": 5.00
+    }
+    // Agregar más ingredientes aquí
+  },
     "Pan de papa": {
         "ingredients": {
             "Harina": 50,
@@ -11,20 +38,42 @@
             "Manteca": 5
         },
         "ingredient_costs": {
-            "Harina": "750",
-            "Agua": "10",
-            "Levadura": "1200",
+            "Harina": "800",
+            "Agua": "100",
+            "Levadura": "30000",
             "Pure de papas": "1000",
             "Azucar": "1500",
             "Sal": "500",
             "Leche en polvo": "4000",
-            "Manteca": "10000"
+            "Manteca": "13000"
         }
     },
     "Pan de masa madre": {
         "ingredients": {
             "Harina": 60,
             "Agua": 40
+        }
+    },
+    "Pan naan": {
+        "ingredients": {
+            "Harina 0000": 36.34636536346365,
+            "Harina 000": 18.17818218178182,
+            "Levadura": 0.94990500949905,
+            "Azucar": 0.8099190080991902,
+            "Sal": 1.0698930106989302,
+            "Manteca": 6.05939406059394,
+            "Yogurth": 13.458654134586542,
+            "Agua": 23.12768723127687
+        },
+        "ingredient_costs": {
+            "Harina 0000": "",
+            "Harina 000": "",
+            "Levadura": "",
+            "Azúcar": "",
+            "Sal": "",
+            "Manteca": "",
+            "Yogurth": "",
+            "Agua": ""
         }
     }
 }

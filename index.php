@@ -16,6 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $selectedRecipe = $_POST['recipe'];
     $unitWeight = floatval($_POST['unit_weight']);
     $quantity = intval($_POST['quantity']);
+    $prefermentPercentage = isset($_POST['preferment']) ? intval($_POST['preferment']) : 0; // Porcentaje de prefermento
 
     if ($unitWeight <= 0) {
         $errors[] = "El peso por unidad debe ser un número positivo.";
@@ -23,14 +24,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($quantity <= 0) {
         $errors[] = "La cantidad debe ser un número positivo.";
     }
+    if ($prefermentPercentage < 0 || $prefermentPercentage > 100) {
+        $errors[] = "El porcentaje de prefermento debe estar entre 0 y 100.";
+    }
 
     if (empty($errors)) {
         $recipe = $recipes[$selectedRecipe];
         $totalWeight = $unitWeight * $quantity; // El peso total siempre estará en gramos
         $ingredients = [];
 
+        // Calcular la cantidad de cada ingrediente en el prefermento
+        $prefermentIngredients = [];
+        if ($prefermentPercentage > 0) {
+            $prefermentWeight = $totalWeight * ($prefermentPercentage / 100);
+
+            // Detectar harina alternativa y leche
+            $alternativeFlour = null;
+            $liquid = 'Agua'; // Por defecto se usa agua
+            foreach ($recipe['ingredients'] as $ingredient => $percentage) {
+                if (stripos($ingredient, 'harina') !== false && $ingredient !== 'Harina') {
+                    $alternativeFlour = $ingredient;
+                }
+                if ($ingredient === 'Leche') {
+                    $liquid = 'Leche';
+                }
+            }
+
+            // Calcular los ingredientes del prefermento
+            $prefermentFlour = $prefermentWeight * 0.5; // 50% de harina en el prefermento
+            $prefermentLiquid = $prefermentWeight * 0.5; // 50% de líquido en el prefermento
+            if ($alternativeFlour) {
+                $prefermentIngredients[$alternativeFlour] = round($prefermentFlour);
+            } else {
+                $prefermentIngredients['Harina'] = round($prefermentFlour);
+            }
+            $prefermentIngredients[$liquid] = round($prefermentLiquid);
+            $prefermentIngredients['Levadura'] = round($totalWeight * ($recipe['ingredients']['Levadura'] / 100)); // 100% de levadura en el prefermento
+        }
+
+        // Calcular la cantidad de cada ingrediente en la masa final (descontando el prefermento)
         foreach ($recipe['ingredients'] as $ingredient => $percentage) {
-            $ingredients[$ingredient] = round($totalWeight * ($percentage / 100));
+            $ingredientWeight = round($totalWeight * ($percentage / 100));
+            if (isset($prefermentIngredients[$ingredient])) {
+                $ingredientWeight -= $prefermentIngredients[$ingredient];
+            }
+            $ingredients[$ingredient] = $ingredientWeight;
         }
 
         $_SESSION['calculated_recipe'] = [
@@ -38,7 +76,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'unit_weight' => $unitWeight,
             'quantity' => $quantity,
             'total_weight' => round($totalWeight),
-            'ingredients' => $ingredients
+            'ingredients' => $ingredients,
+            'preferment' => $prefermentIngredients // Agregar el prefermento a la sesión
         ];
 
         header('Location: index.php');
@@ -83,6 +122,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div>
                     <label for="quantity" class="block text-sm font-medium text-gray-700">Cantidad:</label>
                     <input type="number" name="quantity" id="quantity" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                </div>
+                <div>
+                    <label for="preferment" class="block text-sm font-medium text-gray-700">Porcentaje de Prefermento (opcional):</label>
+                    <input type="number" name="preferment" id="preferment" min="0" max="100" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
                 </div>
                 <button type="submit" class="w-full bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                     Calcular
@@ -137,6 +180,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <span class="font-medium"><strong>Coste total:</strong></span>
                         <span>$<?= number_format($totalCost, 2) ?></span>
                     </div>
+
+                    <?php if (!empty($calculatedRecipe['preferment'])): ?>
+                        <h3 class="font-semibold mt-4 mb-2">Prefermento:</h3>
+                        <ul class="list-disc list-inside mb-4">
+                            <?php foreach ($calculatedRecipe['preferment'] as $ingredient => $weight): ?>
+                                <li><?= htmlspecialchars($ingredient) ?>: <?= $weight ?> g</li>
+                            <?php endforeach; ?>
+                        </ul>
+                    <?php endif; ?>
+
                     <h3 class="font-semibold mt-4 mb-2">Ingredientes:</h3>
                     <ul class="list-disc list-inside" id="ingredients-list">
                         <?php foreach ($calculatedRecipe['ingredients'] as $ingredient => $weight): ?>
@@ -151,7 +204,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         data-cost-per-unit="<?= number_format($costPerUnit, 2) ?>"
                         data-total-cost="<?= number_format($totalCost, 2) ?>"
                         data-ingredients='<?= json_encode($calculatedRecipe['ingredients']) ?>'
-                        data-ingredient-costs='<?= isset($recipes[$calculatedRecipe['name']]['ingredient_costs']) ? json_encode($recipes[$calculatedRecipe['name']]['ingredient_costs']) : '[]' ?>'>
+                        data-ingredient-costs='<?= isset($recipes[$calculatedRecipe['name']]['ingredient_costs']) ? json_encode($recipes[$calculatedRecipe['name']]['ingredient_costs']) : '[]' ?>'
+                        data-preferment='<?= json_encode($calculatedRecipe['preferment']) ?>'>
                         Exportar a TXT
                     </button>
                 </div>
@@ -177,6 +231,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             const ingredients = JSON.parse(button.getAttribute('data-ingredients'));
             const ingredientCosts = JSON.parse(button.getAttribute('data-ingredient-costs'));
+            const preferment = JSON.parse(button.getAttribute('data-preferment'));
 
             let ingredientsList = '';
             for (const ingredient in ingredients) {
@@ -199,7 +254,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             content += `${totalWeight}\n`;
             content += `${costPerUnit}\n`;
             content += `${totalCost}\n`;
-            content += `\nIngredients:\n${ingredientsList}`;
+
+            if (Object.keys(preferment).length > 0) { // Verificar si hay ingredientes en el prefermento
+                content += "\nPrefermento:\n";
+                for (const ingredient in preferment) {
+                    const weight = preferment[ingredient];
+                    content += `${ingredient}: ${weight} g\n`;
+                }
+            }
+
+            content += `\nIngredientes:\n${ingredientsList}`;
 
             const blob = new Blob([content], { type: 'text/plain' });
             const a = document.createElement('a');
