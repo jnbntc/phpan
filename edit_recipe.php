@@ -3,58 +3,52 @@ require_once 'funciones.php';
 
 session_start();
 $recipes = loadRecipes();
+$commonIngredients = $recipes['ingredients'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $errors = [];
 
     $recipeName = $_POST['recipe_name'];
-    $ingredients = [];
-    $totalGrams = 0;
-    $totalPercentage = 0;
+    $recipeIngredients = [];
 
-    if (!preg_match('/^[a-zA-Z0-9\s]+$/', $recipeName)) {
-        $errors[] = "El nombre de la receta solo puede contener letras, números y espacios.";
-    }
+    if (isset($_POST['delete_recipe'])) {
+        $recipeToDelete = $_POST['delete_recipe'];
 
-    foreach ($_POST['ingredient'] as $index => $ingredient) {
-        $value = floatval($_POST['value'][$index]);
-        $isPercentage = isset($_POST['is_percentage'][$index]);
+        if (isset($recipes['recipes'][$recipeToDelete])) {
+            unset($recipes['recipes'][$recipeToDelete]);
 
-        if ($value <= 0) {
-            $errors[] = "El valor del ingrediente \"$ingredient\" debe ser un número positivo.";
-        }
-        if ($isPercentage) {
-            if ($value < 0 || $value > 100) {
-                $errors[] = "El porcentaje del ingrediente \"$ingredient\" debe estar entre 0 y 100.";
+            if (saveRecipes($recipes)) {
+                header('Location: edit_recipe.php'); // Redirigir a edit_recipe.php después de eliminar
+                exit;
+            } else {
+                $errors[] = "Error al eliminar la receta.";
             }
-            $totalPercentage += $value;
-        } else {
-            $totalGrams += $value;
         }
-
-        $ingredients[$ingredient] = ['value' => $value, 'isPercentage' => $isPercentage];
+    } elseif (!preg_match('/^[a-zA-Z0-9\s]+$/', $recipeName)) {
+        $errors[] = "El nombre de la receta solo puede contener letras, números y espacios.";
+    } 
+    
+    // Obtener los ingredientes seleccionados y sus valores (en gramos)
+    if (isset($_POST['selected_ingredients'])) {
+        foreach ($_POST['selected_ingredients'] as $ingredientName => $weight) {
+            $value = floatval($weight);
+            if ($value <= 0) {
+                $errors[] = "El peso del ingrediente \"$ingredientName\" debe ser un número positivo.";
+            }
+            $recipeIngredients[$ingredientName] = $value;
+        }
     }
 
-    // Normalizar porcentajes si se ingresaron algunos
-    if ($totalPercentage > 0) {
-        if ($totalPercentage != 100) {
-            $errors[] = "La suma de los porcentajes debe ser igual a 100.";
-        }
-    } else {
-        // Calcular porcentajes a partir de gramos
-        foreach ($ingredients as &$ingredientData) {
-            $ingredientData['value'] = ($ingredientData['value'] / $totalGrams) * 100;
-            $ingredientData['isPercentage'] = true;
-        }
+    // Calcular las proporciones de los ingredientes
+    $totalWeight = array_sum($recipeIngredients);
+    $proportions = [];
+    foreach ($recipeIngredients as $ingredientName => $weight) {
+        $proportions[$ingredientName] = ($weight / $totalWeight) * 100;
     }
 
     if (empty($errors)) {
-        $recipes[$recipeName] = ['ingredients' => array_map(function($data) { return $data['value']; }, $ingredients)];
-
-        // Guardar costes de los ingredientes (opcional)
-        if (isset($_POST['ingredient_cost'])) {
-            $recipes[$recipeName]['ingredient_costs'] = $_POST['ingredient_cost'];
-        }
+        // Guardar las proporciones en recipes.json
+        $recipes['recipes'][$recipeName] = ['ingredients' => $proportions];
 
         if (saveRecipes($recipes)) {
             header('Location: index.php');
@@ -67,9 +61,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $editingRecipe = null;
 $editingRecipeName = '';
-if (isset($_GET['recipe']) && isset($recipes[$_GET['recipe']])) {
+if (isset($_GET['recipe']) && isset($recipes['recipes'][$_GET['recipe']])) {
     $editingRecipeName = $_GET['recipe'];
-    $editingRecipe = $recipes[$editingRecipeName];
+    $editingRecipe = $recipes['recipes'][$editingRecipeName];
 }
 ?>
 
@@ -91,11 +85,20 @@ if (isset($_GET['recipe']) && isset($recipes[$_GET['recipe']])) {
                 <label for="recipe_selector" class="block text-sm font-medium text-gray-700">Seleccionar Receta Existente:</label>
                 <select id="recipe_selector" onchange="loadRecipe(this.value)" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
                     <option value="">-- Seleccionar Receta --</option>
-                    <?php foreach ($recipes as $name => $recipe): ?>
+                    <?php foreach ($recipes['recipes'] as $name => $recipe): ?>
                         <option value="<?= htmlspecialchars($name) ?>" <?= $name === $editingRecipeName ? 'selected' : '' ?>><?= htmlspecialchars($name) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
+
+            <?php if ($editingRecipe): ?>
+                <form method="post" class="space-y-4">
+                    <input type="hidden" name="delete_recipe" value="<?= htmlspecialchars($editingRecipeName) ?>">
+                    <button type="submit" onclick="return confirm('¿Estás seguro de que deseas eliminar esta receta?')" class="w-full bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
+                        Eliminar Receta
+                    </button>
+                </form>
+            <?php endif; ?>
 
             <form method="post" class="space-y-4">
                 <div>
@@ -103,46 +106,28 @@ if (isset($_GET['recipe']) && isset($recipes[$_GET['recipe']])) {
                     <input type="text" name="recipe_name" id="recipe_name" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" value="<?= htmlspecialchars($editingRecipeName) ?>">
                 </div>
 
-                <div id="ingredients">
-                    <?php if ($editingRecipe): ?>
-                        <?php foreach ($editingRecipe['ingredients'] as $ingredient => $percentage): ?>
-                            <div class="ingredient-row flex space-x-2 mb-2">
-                                <input type="text" name="ingredient[]" placeholder="Ingrediente" required class="flex-grow rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" value="<?= htmlspecialchars($ingredient) ?>">
-                                <input type="number" name="value[]" placeholder="Valor" step="0.01" required class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" value="<?= number_format($percentage, 2) ?>">
-                                <label class="flex items-center">
-                                    <input type="checkbox" name="is_percentage[]" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                                    <span class="ml-2 text-sm text-gray-600">%</span>
-                                </label>
-
-                                <?php 
-                                // Mostrar campo para el coste del ingrediente (opcional)
-                                if (isset($editingRecipe['ingredient_costs'][$ingredient])) {
-                                    echo '<input type="number" name="ingredient_cost[' . htmlspecialchars($ingredient) . ']" placeholder="Coste" step="0.01" class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" value="' . htmlspecialchars($editingRecipe['ingredient_costs'][$ingredient]) . '">';
-                                } else {
-                                    echo '<input type="number" name="ingredient_cost[' . htmlspecialchars($ingredient) . ']" placeholder="Coste" step="0.01" class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">';
-                                }
-                                ?>
-
-                                <button type="button" onclick="removeIngredient(this)" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">-</button>
-                            </div>
+                <div class="flex space-x-2">
+                    <select id="ingredient_selector" class="w-1/2 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                        <option value="">-- Seleccionar Ingrediente --</option>
+                        <?php foreach ($commonIngredients as $ingredientName => $ingredientData): ?>
+                            <option value="<?= htmlspecialchars($ingredientName) ?>"><?= htmlspecialchars($ingredientName) ?></option>
                         <?php endforeach; ?>
-                    <?php else: ?>
-                        <div class="ingredient-row flex space-x-2 mb-2">
-                            <input type="text" name="ingredient[]" placeholder="Ingrediente" required class="flex-grow rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                            <input type="number" name="value[]" placeholder="Valor" step="0.01" required class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                            <label class="flex items-center">
-                                <input type="checkbox" name="is_percentage[]" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                                <span class="ml-2 text-sm text-gray-600">%</span>
-                            </label>
-                            <input type="number" name="ingredient_cost[]" placeholder="Coste" step="0.01" class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                            <button type="button" onclick="removeIngredient(this)" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">-</button>
-                        </div>
-                    <?php endif; ?>
+                    </select>
+                    <input type="number" id="ingredient_weight" placeholder="Peso (g)" min="0" step="0.01" class="w-1/4 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                    <button type="button" id="add_ingredient_button" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">Agregar</button>
                 </div>
 
-                <button type="button" onclick="addIngredient()" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
-                    Agregar Ingrediente
-                </button>
+                <div id="selected_ingredients">
+                    <?php if ($editingRecipe): ?>
+                        <?php foreach ($editingRecipe['ingredients'] as $ingredientName => $percentage): ?>
+                            <div class="ingredient-row flex space-x-2 mb-2" data-ingredient="<?= htmlspecialchars($ingredientName) ?>">
+                                <span class="flex-grow"><?= htmlspecialchars($ingredientName) ?></span>
+                                <input type="number" name="selected_ingredients[<?= htmlspecialchars($ingredientName) ?>]" value="<?= number_format($percentage, 2) ?>" min="0" step="0.01" class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                                <button type="button" class="remove_ingredient_button bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded text-xs">-</button>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
 
                 <button type="submit" class="w-full bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                     Guardar Receta
@@ -159,6 +144,9 @@ if (isset($_GET['recipe']) && isset($recipes[$_GET['recipe']])) {
                 </div>
             <?php endif; ?>
 
+            <a href="manage_ingredients.php" class="block mt-4 text-center bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                Administrar Ingredientes
+            </a>
             <a href="index.php" class="block mt-4 text-center bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
                 Volver
             </a>
@@ -166,32 +154,49 @@ if (isset($_GET['recipe']) && isset($recipes[$_GET['recipe']])) {
     </div>
 
     <script>
-    function addIngredient() {
-        const ingredientsDiv = document.getElementById('ingredients');
-        const newRow = document.createElement('div');
-        newRow.className = 'ingredient-row flex space-x-2 mb-2';
-        newRow.innerHTML = `
-            <input type="text" name="ingredient[]" placeholder="Ingrediente" required class="flex-grow rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-            <input type="number" name="value[]" placeholder="Valor" step="0.01" required class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-            <label class="flex items-center">
-                <input type="checkbox" name="is_percentage[]" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                <span class="ml-2 text-sm text-gray-600">%</span>
-            </label>
-            <input type="number" name="ingredient_cost[]" placeholder="Coste" step="0.01" class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-            <button type="button" onclick="removeIngredient(this)" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">-</button>
-        `;
-        ingredientsDiv.appendChild(newRow);
-    }
+        document.getElementById('add_ingredient_button').addEventListener('click', function() {
+            const ingredientSelector = document.getElementById('ingredient_selector');
+            const weightInput = document.getElementById('ingredient_weight');
+            const selectedIngredientsDiv = document.getElementById('selected_ingredients');
 
-    function removeIngredient(button) {
-        button.closest('.ingredient-row').remove();
-    }
+            const ingredientName = ingredientSelector.value;
+            const weight = parseFloat(weightInput.value);
 
-    function loadRecipe(recipeName) {
-        if (recipeName) {
-            window.location.href = 'edit_recipe.php?recipe=' + encodeURIComponent(recipeName);
+            if (ingredientName && weight >= 0) {
+                const existingIngredient = selectedIngredientsDiv.querySelector(`[data-ingredient="${ingredientName}"]`);
+                if (existingIngredient) {
+                    alert('El ingrediente ya está en la lista.');
+                    return;
+                }
+
+                const newRow = document.createElement('div');
+                newRow.className = 'ingredient-row flex space-x-2 mb-2';
+                newRow.dataset.ingredient = ingredientName;
+                newRow.innerHTML = `
+                    <span class="flex-grow">${ingredientName}</span>
+                    <input type="number" name="selected_ingredients[${ingredientName}]" value="${weight.toFixed(2)}" min="0" step="0.01" class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                    <button type="button" class="remove_ingredient_button bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded text-xs">-</button>
+                `;
+                selectedIngredientsDiv.appendChild(newRow);
+
+                // Limpiar los campos
+                ingredientSelector.value = '';
+                weightInput.value = '';
+
+                // Agregar evento click al botón "Eliminar"
+                newRow.querySelector('.remove_ingredient_button').addEventListener('click', function() {
+                    newRow.remove();
+                });
+            } else {
+                alert('Por favor, selecciona un ingrediente y un peso válido.');
+            }
+        });
+
+        function loadRecipe(recipeName) {
+            if (recipeName) {
+                window.location.href = 'edit_recipe.php?recipe=' + encodeURIComponent(recipeName);
+            }
         }
-    }
     </script>
 </body>
 </html>

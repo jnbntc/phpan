@@ -1,79 +1,25 @@
 {
-  "ingredients": {
-    "Harina": {
-      "price": 2.50
-    },
-    "Agua": {
-      "price": 0.00
-    },
-    "Levadura": {
-      "price": 8.00
-    },
-    "Sal": {
-      "price": 1.00
-    },
-    "Azúcar": {
-      "price": 3.00
-    },
-    "Leche": {
-      "price": 4.00
-    },
-    "Harina Integral": {
-      "price": 3.50
-    },
-    "Aceite": {
-      "price": 5.00
-    }
-    // Agregar más ingredientes aquí
-  },
-    "Pan de papa": {
-        "ingredients": {
-            "Harina": 50,
-            "Agua": 18,
-            "Levadura": 1,
-            "Pure de papas": 20,
-            "Azucar": 2,
-            "Sal": 1,
-            "Leche en polvo": 3,
-            "Manteca": 5
+    "ingredients": {
+        "Levadura": {
+            "price": 30000
         },
-        "ingredient_costs": {
-            "Harina": "800",
-            "Agua": "100",
-            "Levadura": "30000",
-            "Pure de papas": "1000",
-            "Azucar": "1500",
-            "Sal": "500",
-            "Leche en polvo": "4000",
-            "Manteca": "13000"
+        "Harina": {
+            "price": 800
+        },
+        "Agua": {
+            "price": 100
+        },
+        "Leche": {
+            "price": 1200
         }
     },
-    "Pan de masa madre": {
-        "ingredients": {
-            "Harina": 60,
-            "Agua": 40
-        }
-    },
-    "Pan naan": {
-        "ingredients": {
-            "Harina 0000": 36.34636536346365,
-            "Harina 000": 18.17818218178182,
-            "Levadura": 0.94990500949905,
-            "Azucar": 0.8099190080991902,
-            "Sal": 1.0698930106989302,
-            "Manteca": 6.05939406059394,
-            "Yogurth": 13.458654134586542,
-            "Agua": 23.12768723127687
-        },
-        "ingredient_costs": {
-            "Harina 0000": "",
-            "Harina 000": "",
-            "Levadura": "",
-            "Azúcar": "",
-            "Sal": "",
-            "Manteca": "",
-            "Yogurth": "",
-            "Agua": ""
+    "recipes": {
+        "Pan": {
+            "ingredients": {
+                "Levadura": 0.6211180124223602,
+                "Harina": 62.11180124223602,
+                "Agua": 37.267080745341616
+            }
         }
     }
 }

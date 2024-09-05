@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
-        $recipe = $recipes[$selectedRecipe];
+        $recipe = $recipes['recipes'][$selectedRecipe];
         $totalWeight = $unitWeight * $quantity; // El peso total siempre estará en gramos
         $ingredients = [];
 
@@ -64,6 +64,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Calcular la cantidad de cada ingrediente en la masa final (descontando el prefermento)
         foreach ($recipe['ingredients'] as $ingredient => $percentage) {
+            // Saltar la levadura si se está usando prefermento
+            if ($prefermentPercentage > 0 && $ingredient === 'Levadura') {
+                continue;
+            }
+
             $ingredientWeight = round($totalWeight * ($percentage / 100));
             if (isset($prefermentIngredients[$ingredient])) {
                 $ingredientWeight -= $prefermentIngredients[$ingredient];
@@ -110,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div>
                     <label for="recipe" class="block text-sm font-medium text-gray-700">Seleccionar Receta:</label>
                     <select name="recipe" id="recipe" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                        <?php foreach ($recipes as $name => $recipe): ?>
+                        <?php foreach ($recipes['recipes'] as $name => $recipe): ?>
                             <option value="<?= htmlspecialchars($name) ?>"><?= htmlspecialchars($name) ?></option>
                         <?php endforeach; ?>
                     </select>
@@ -167,8 +172,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Calcular el coste de la receta (opcional)
                     $totalCost = 0; // Inicializar el coste total
                     $costPerUnit = 0;
-                    if (isset($recipes[$calculatedRecipe['name']]['ingredient_costs'])) {
-                        $totalCost = calculateRecipeCost($recipes[$calculatedRecipe['name']]['ingredients'], $recipes[$calculatedRecipe['name']]['ingredient_costs'], $calculatedRecipe['total_weight']);
+                    if (isset($recipes['recipes'][$calculatedRecipe['name']]['ingredients'])) { // Acceder a 'ingredients' correctamente
+                        $totalCost = calculateRecipeCost($recipes['recipes'][$calculatedRecipe['name']]['ingredients'], $recipes['ingredients'], $calculatedRecipe['total_weight']);
                         $costPerUnit = $totalCost / $calculatedRecipe['quantity']; // Calcular coste por unidad
                     }
                     ?>
@@ -218,61 +223,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <script>
-        document.getElementById('exportButton').addEventListener('click', function() {
-            const button = this; // Referencia al botón actual
+	document.getElementById('exportButton').addEventListener('click', function() {
+    const button = this; 
 
-            const title = "Resultado";
-            const recipeName = button.getAttribute('data-recipe-name');
-            const quantity = button.getAttribute('data-quantity');
-            const unitWeight = button.getAttribute('data-unit-weight') + " g";
-            const totalWeight = button.getAttribute('data-total-weight') + " g";
-            const costPerUnit = button.getAttribute('data-cost-per-unit');
-            const totalCost = button.getAttribute('data-total-cost');
+    const title = "Resultado";
+    const recipeName = button.getAttribute('data-recipe-name');
+    const quantity = button.getAttribute('data-quantity');
+    const unitWeight = button.getAttribute('data-unit-weight');
+    const totalWeight = button.getAttribute('data-total-weight') + " g";
+    const costPerUnit = button.getAttribute('data-cost-per-unit');
+    const totalCost = button.getAttribute('data-total-cost');
 
-            const ingredients = JSON.parse(button.getAttribute('data-ingredients'));
-            const ingredientCosts = JSON.parse(button.getAttribute('data-ingredient-costs'));
-            const preferment = JSON.parse(button.getAttribute('data-preferment'));
+    const ingredients = JSON.parse(button.getAttribute('data-ingredients'));
+    const ingredientCosts = JSON.parse(button.getAttribute('data-ingredient-costs'));
+    const preferment = JSON.parse(button.getAttribute('data-preferment'));
 
-            let ingredientsList = '';
-            for (const ingredient in ingredients) {
-                const weight = ingredients[ingredient];
-                let ingredientLine = `${ingredient}: ${weight} g`;
+    let ingredientsList = '';
+    for (const ingredient in ingredients) {
+        const weight = ingredients[ingredient];
+        let ingredientLine = `   ${ingredient}: ${weight.toFixed(2)} g`; // 3 espacios para indentar
 
-                if (ingredientCosts[ingredient]) {
-                    const ingredientCost = ingredientCosts[ingredient];
-                    const ingredientTotalCost = (weight / 1000) * ingredientCost;
-                    ingredientLine += ` - $${ingredientTotalCost.toFixed(2)}`;
-                }
+        if (ingredientCosts[ingredient]) {
+            const ingredientCost = ingredientCosts[ingredient].price; 
+            const ingredientTotalCost = (weight / 1000) * ingredientCost;
+            ingredientLine += ` - $${ingredientTotalCost.toFixed(2)}`;
+        }
 
-                ingredientsList += `${ingredientLine}\n`;
-            }
+        ingredientsList += `${ingredientLine}\n`;
+    }
 
-            let content = `${title}\n\n`;
-            content += `${recipeName}\n`;
-            content += `${quantity}\n`;
-            content += `${unitWeight}\n`;
-            content += `${totalWeight}\n`;
-            content += `${costPerUnit}\n`;
-            content += `${totalCost}\n`;
+    let content = `${title}\n\n`;
+    content += `Receta: ${recipeName}\n`;
+    content += `Cantidad: ${quantity}\n`;
+    content += `Peso por unidad: ${unitWeight} g\n`;
+    content += `Peso Total: ${totalWeight}\n`;
+    content += `Coste por unidad: $${costPerUnit}\n`;
+    content += `Coste total: $${totalCost}\n`;
 
-            if (Object.keys(preferment).length > 0) { // Verificar si hay ingredientes en el prefermento
-                content += "\nPrefermento:\n";
-                for (const ingredient in preferment) {
-                    const weight = preferment[ingredient];
-                    content += `${ingredient}: ${weight} g\n`;
-                }
-            }
+    if (Object.keys(preferment).length > 0) {
+        content += "\nPrefermento:\n";
+        for (const ingredient in preferment) {
+            const weight = preferment[ingredient];
+            content += `   ${ingredient}: ${weight} g\n`; // 3 espacios para indentar
+        }
+    }
 
-            content += `\nIngredientes:\n${ingredientsList}`;
+    content += `\nIngredientes:\n${ingredientsList}`;
 
-            const blob = new Blob([content], { type: 'text/plain' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'receta.txt';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-        });
+    // Separar palabras del nombre con guiones bajos
+    const fileName = recipeName.split(' ').join('_') + 
+                    '_' + quantity + 'u' + 
+                    '_' + unitWeight + 'g.txt';
+
+    const blob = new Blob([content], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName; 
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+});
     </script>
 </body>
 </html>
