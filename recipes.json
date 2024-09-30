@@ -1,8 +1,5 @@
 {
     "ingredients": {
-        "Levadura": {
-            "price": 30000
-        },
         "Harina": {
             "price": 800
         },
@@ -11,14 +8,62 @@
         },
         "Leche": {
             "price": 1200
+        },
+        "Pure de papas": {
+            "price": 1000
+        },
+        "Manteca": {
+            "price": 12000
+        },
+        "Harina 000": {
+            "price": 800
+        },
+        "Harina 0000": {
+            "price": 800
+        },
+        "Harina integral": {
+            "price": 1000
+        },
+        "Azucar": {
+            "price": 1500
+        },
+        "Levadura": {
+            "price": 30000
+        },
+        "Leche en polvo": {
+            "price": 4000
+        },
+        "Sal": {
+            "price": 1000
+        },
+        "Aceite girasol": {
+            "price": 1000
+        },
+        "Aceite de oliva": {
+            "price": 20000
+        },
+        "Mejorador": {
+            "price": 10000
         }
     },
     "recipes": {
-        "Pan": {
+        "Pan de papa": {
             "ingredients": {
-                "Levadura": 0.6211180124223602,
-                "Harina": 62.11180124223602,
-                "Agua": 37.267080745341616
+                "Harina 0000": 50.505050505050505,
+                "Agua": 16.161616161616163,
+                "Pure de papas": 20.2020202020202,
+                "Azucar": 3.0303030303030303,
+                "Sal": 1.0101010101010102,
+                "Leche en polvo": 3.0303030303030303,
+                "Manteca": 5.05050505050505,
+                "Levadura": 1.0101010101010102
+            }
+        },
+        "Pizza": {
+            "ingredients": {
+                "Harina 0000": 62.30529595015576,
+                "Agua": 37.38317757009346,
+                "Mejorador": 0.3115264797507788
             }
         }
     }
