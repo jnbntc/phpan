@@ -1,69 +1,96 @@
 <?php
-require_once 'funciones.php';
+require_once 'src/Database.php';
+require_once 'src/IngredientManager.php';
+require_once 'src/RecipeManager.php';
 
 session_start();
-$recipes = loadRecipes();
-$commonIngredients = $recipes['ingredients'];
+
+$db = new Database();
+$ingredientManager = new IngredientManager($db);
+$recipeManager = new RecipeManager($db);
+
+$allIngredients = $ingredientManager->getAllIngredients();
+$commonIngredients = [];
+foreach ($allIngredients as $ingredient) {
+    $commonIngredients[$ingredient['name']] = $ingredient;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $errors = [];
 
     $recipeName = $_POST['recipe_name'];
     $recipeIngredients = [];
+      $recipeInstructions = $_POST['recipe_instructions'];
+
 
     if (isset($_POST['delete_recipe'])) {
-        $recipeToDelete = $_POST['delete_recipe'];
+         $recipeToDeleteName = $_POST['delete_recipe'];
+        $recipeToDelete = $recipeManager->getRecipeByName($recipeToDeleteName);
 
-        if (isset($recipes['recipes'][$recipeToDelete])) {
-            unset($recipes['recipes'][$recipeToDelete]);
-
-            if (saveRecipes($recipes)) {
-                header('Location: edit_recipe.php'); // Redirigir a edit_recipe.php después de eliminar
-                exit;
-            } else {
-                $errors[] = "Error al eliminar la receta.";
-            }
-        }
+         if ($recipeToDelete) {
+              $recipeManager->deleteRecipeIngredients($recipeToDelete['id']);
+                if ($recipeManager->deleteRecipe($recipeToDelete['id'])) {
+                    header('Location: edit_recipe.php');
+                    exit;
+                } else {
+                    $errors[] = "Error al eliminar la receta.";
+                }
+         }
     } elseif (!preg_match('/^[a-zA-Z0-9\s]+$/', $recipeName)) {
         $errors[] = "El nombre de la receta solo puede contener letras, números y espacios.";
-    } 
-    
-    // Obtener los ingredientes seleccionados y sus valores (en gramos)
-    if (isset($_POST['selected_ingredients'])) {
-        foreach ($_POST['selected_ingredients'] as $ingredientName => $weight) {
-            $value = floatval($weight);
-            if ($value <= 0) {
-                $errors[] = "El peso del ingrediente \"$ingredientName\" debe ser un número positivo.";
-            }
-            $recipeIngredients[$ingredientName] = $value;
-        }
     }
 
-    // Calcular las proporciones de los ingredientes
-    $totalWeight = array_sum($recipeIngredients);
-    $proportions = [];
-    foreach ($recipeIngredients as $ingredientName => $weight) {
-        $proportions[$ingredientName] = ($weight / $totalWeight) * 100;
+    // Obtener los ingredientes seleccionados y sus valores
+    if (isset($_POST['selected_ingredients'])) {
+           foreach ($_POST['selected_ingredients'] as $ingredientName => $weight) {
+              $weight = floatval($weight);
+                if ($weight <= 0) {
+                  $errors[] = "El peso del ingrediente \"$ingredientName\" debe ser un número positivo.";
+                }
+
+                $recipeIngredients[$ingredientName] = $weight;
+         }
     }
 
     if (empty($errors)) {
-        // Guardar las proporciones en recipes.json
-        $recipes['recipes'][$recipeName] = ['ingredients' => $proportions];
-
-        if (saveRecipes($recipes)) {
+       $recipe = $recipeManager->getRecipeByName($recipeName);
+        if ($recipe) {
+          $recipeId = $recipe['id'];
+          $recipeManager->deleteRecipeIngredients($recipeId);
+           $recipeManager->updateRecipe($recipeId, $recipeName);
+             $recipeManager->updateRecipeInstructions($recipeId, $recipeInstructions);
+        } else {
+          $recipeId = $recipeManager->addRecipe($recipeName);
+           if(!$recipeId) {
+              $errors[] = "Error al guardar la receta en la base de datos.";
+           }
+           $recipeManager->updateRecipeInstructions($recipeId, $recipeInstructions);
+        }
+       if($recipeId) {
+            foreach ($recipeIngredients as $ingredientName => $weight) {
+                $ingredient = $ingredientManager->getIngredientByName($ingredientName);
+                    if($ingredient) {
+                      $recipeManager->addRecipeIngredient($recipeId, $ingredient['id'], $weight);
+                    }
+            }
             header('Location: index.php');
             exit;
         } else {
             $errors[] = "Error al guardar la receta.";
-        }
+       }
     }
 }
 
 $editingRecipe = null;
 $editingRecipeName = '';
-if (isset($_GET['recipe']) && isset($recipes['recipes'][$_GET['recipe']])) {
+$editingRecipeInstructions = '';
+if (isset($_GET['recipe'])) {
     $editingRecipeName = $_GET['recipe'];
-    $editingRecipe = $recipes['recipes'][$editingRecipeName];
+     $recipe = $recipeManager->getRecipeByName($editingRecipeName);
+     if($recipe) {
+       $editingRecipe = $recipeManager->getRecipeIngredients($recipe['id']);
+        $editingRecipeInstructions = $recipeManager->getRecipeInstructions($recipe['id']);
+     }
 }
 ?>
 
@@ -85,8 +112,10 @@ if (isset($_GET['recipe']) && isset($recipes['recipes'][$_GET['recipe']])) {
                 <label for="recipe_selector" class="block text-sm font-medium text-gray-700">Seleccionar Receta Existente:</label>
                 <select id="recipe_selector" onchange="loadRecipe(this.value)" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
                     <option value="">-- Seleccionar Receta --</option>
-                    <?php foreach ($recipes['recipes'] as $name => $recipe): ?>
-                        <option value="<?= htmlspecialchars($name) ?>" <?= $name === $editingRecipeName ? 'selected' : '' ?>><?= htmlspecialchars($name) ?></option>
+                    <?php
+                       $recipes = $recipeManager->getAllRecipes();
+                         foreach ($recipes as $recipe): ?>
+                        <option value="<?= htmlspecialchars($recipe['name']) ?>" <?= $recipe['name'] === $editingRecipeName ? 'selected' : '' ?>><?= htmlspecialchars($recipe['name']) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -106,6 +135,11 @@ if (isset($_GET['recipe']) && isset($recipes['recipes'][$_GET['recipe']])) {
                     <input type="text" name="recipe_name" id="recipe_name" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" value="<?= htmlspecialchars($editingRecipeName) ?>">
                 </div>
 
+                  <div>
+                    <label for="recipe_instructions" class="block text-sm font-medium text-gray-700">Instrucciones de la Receta:</label>
+                    <textarea name="recipe_instructions" id="recipe_instructions" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"><?= htmlspecialchars($editingRecipeInstructions) ?></textarea>
+                  </div>
+
                 <div class="flex space-x-2">
                     <select id="ingredient_selector" class="w-1/2 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
                         <option value="">-- Seleccionar Ingrediente --</option>
@@ -113,16 +147,17 @@ if (isset($_GET['recipe']) && isset($recipes['recipes'][$_GET['recipe']])) {
                             <option value="<?= htmlspecialchars($ingredientName) ?>"><?= htmlspecialchars($ingredientName) ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <input type="number" id="ingredient_weight" placeholder="Peso (g)" min="0" step="0.01" class="w-1/4 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                    <input type="number" id="ingredient_weight" placeholder="Peso (g)" min="0" step="0.01" class="w-1/2 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+
                     <button type="button" id="add_ingredient_button" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">Agregar</button>
                 </div>
 
                 <div id="selected_ingredients">
                     <?php if ($editingRecipe): ?>
-                        <?php foreach ($editingRecipe['ingredients'] as $ingredientName => $percentage): ?>
-                            <div class="ingredient-row flex space-x-2 mb-2" data-ingredient="<?= htmlspecialchars($ingredientName) ?>">
-                                <span class="flex-grow"><?= htmlspecialchars($ingredientName) ?></span>
-                                <input type="number" name="selected_ingredients[<?= htmlspecialchars($ingredientName) ?>]" value="<?= number_format($percentage, 2) ?>" min="0" step="0.01" class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                         <?php foreach ($editingRecipe as $ingredient): ?>
+                            <div class="ingredient-row flex space-x-2 mb-2" data-ingredient="<?= htmlspecialchars($ingredient['name']) ?>">
+                                <span class="flex-grow"><?= htmlspecialchars($ingredient['name']) ?></span>
+                                <input type="number" name="selected_ingredients[<?= htmlspecialchars($ingredient['name']) ?>]" value="<?=  htmlspecialchars($ingredient['weight']) ?>" min="0" step="0.01" class="w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
                                 <button type="button" class="remove_ingredient_button bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded text-xs">-</button>
                             </div>
                         <?php endforeach; ?>
@@ -153,11 +188,11 @@ if (isset($_GET['recipe']) && isset($recipes['recipes'][$_GET['recipe']])) {
         </div>
     </div>
 
-    <script>
-        document.getElementById('add_ingredient_button').addEventListener('click', function() {
+   <script>
+       document.getElementById('add_ingredient_button').addEventListener('click', function() {
             const ingredientSelector = document.getElementById('ingredient_selector');
             const weightInput = document.getElementById('ingredient_weight');
-            const selectedIngredientsDiv = document.getElementById('selected_ingredients');
+             const selectedIngredientsDiv = document.getElementById('selected_ingredients');
 
             const ingredientName = ingredientSelector.value;
             const weight = parseFloat(weightInput.value);
