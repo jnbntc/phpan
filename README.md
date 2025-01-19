@@ -27,7 +27,7 @@ Además, puedes gestionar una lista de ingredientes con sus precios para calcula
 1. **Clona el repositorio:**
 
    ```
-   git clone https://github.com/tu-usuario/calculadora-masas-panaderia.git
+   git clone https://github.com/jnbntc/phpan.git
    ```
 
       
