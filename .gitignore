@@ -3,3 +3,4 @@ recipes.json.bak
 recipes.json
 recipes.json
 migrate.php
+data/recipes.sqlite

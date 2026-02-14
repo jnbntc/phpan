@@ -5,9 +5,21 @@ require_once 'src/RecipeManager.php';
 
 session_start();
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+function isValidCsrfToken(?string $token): bool
+{
+    return is_string($token)
+        && isset($_SESSION['csrf_token'])
+        && hash_equals($_SESSION['csrf_token'], $token);
+}
+
 $db = new Database();
 $ingredientManager = new IngredientManager($db);
 $recipeManager = new RecipeManager($db);
+ $errors = [];
 
 $allIngredients = $ingredientManager->getAllIngredients();
 $commonIngredients = [];
@@ -16,68 +28,88 @@ foreach ($allIngredients as $ingredient) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $errors = [];
+    if (!isValidCsrfToken($_POST['csrf_token'] ?? null)) {
+        $errors[] = "La sesión del formulario expiró. Recargá la página e intentá nuevamente.";
+    }
 
-    $recipeName = $_POST['recipe_name'];
-    $recipeIngredients = [];
-      $recipeInstructions = $_POST['recipe_instructions'];
-
-
-    if (isset($_POST['delete_recipe'])) {
-         $recipeToDeleteName = $_POST['delete_recipe'];
+    if (isset($_POST['delete_recipe']) && empty($errors)) {
+         $recipeToDeleteName = trim((string) $_POST['delete_recipe']);
         $recipeToDelete = $recipeManager->getRecipeByName($recipeToDeleteName);
 
          if ($recipeToDelete) {
-              $recipeManager->deleteRecipeIngredients($recipeToDelete['id']);
-                if ($recipeManager->deleteRecipe($recipeToDelete['id'])) {
+                if ($recipeManager->deleteRecipe((int) $recipeToDelete['id'])) {
                     header('Location: edit_recipe.php');
                     exit;
                 } else {
                     $errors[] = "Error al eliminar la receta.";
                 }
          }
-    } elseif (!preg_match('/^[a-zA-Z0-9\s]+$/', $recipeName)) {
-        $errors[] = "El nombre de la receta solo puede contener letras, números y espacios.";
-    }
+    } elseif (empty($errors)) {
+        $recipeName = trim((string) ($_POST['recipe_name'] ?? ''));
+        $recipeInstructions = trim((string) ($_POST['recipe_instructions'] ?? ''));
+        $recipeIngredients = [];
 
-    // Obtener los ingredientes seleccionados y sus valores
-    if (isset($_POST['selected_ingredients'])) {
-           foreach ($_POST['selected_ingredients'] as $ingredientName => $weight) {
-              $weight = floatval($weight);
+        if ($recipeName === '') {
+            $errors[] = "El nombre de la receta es obligatorio.";
+        } elseif (!preg_match('/^[\p{L}\p{N}\s\-_]+$/u', $recipeName)) {
+            $errors[] = "El nombre de la receta solo puede contener letras, números, espacios, guiones y guión bajo.";
+        }
+
+        if (isset($_POST['selected_ingredients']) && is_array($_POST['selected_ingredients'])) {
+            foreach ($_POST['selected_ingredients'] as $ingredientName => $weight) {
+                $ingredientName = trim((string) $ingredientName);
+                $weight = (float) $weight;
                 if ($weight <= 0) {
-                  $errors[] = "El peso del ingrediente \"$ingredientName\" debe ser un número positivo.";
+                    $errors[] = "El peso del ingrediente \"$ingredientName\" debe ser un número positivo.";
+                }
+                $recipeIngredients[$ingredientName] = $weight;
+            }
+        }
+
+        if (empty($errors)) {
+            $pdo = $db->getPDO();
+            $recipeId = null;
+
+            try {
+                $pdo->beginTransaction();
+                $recipe = $recipeManager->getRecipeByName($recipeName);
+
+                if ($recipe) {
+                    $recipeId = (int) $recipe['id'];
+                    $recipeManager->deleteRecipeIngredients($recipeId);
+                    $recipeManager->updateRecipe($recipeId, $recipeName);
+                    $recipeManager->updateRecipeInstructions($recipeId, $recipeInstructions);
+                } else {
+                    $recipeId = $recipeManager->addRecipe($recipeName);
+                    if (!$recipeId) {
+                        throw new RuntimeException("No se pudo crear la receta.");
+                    }
+                    $recipeManager->updateRecipeInstructions((int) $recipeId, $recipeInstructions);
                 }
 
-                $recipeIngredients[$ingredientName] = $weight;
-         }
-    }
-
-    if (empty($errors)) {
-       $recipe = $recipeManager->getRecipeByName($recipeName);
-        if ($recipe) {
-          $recipeId = $recipe['id'];
-          $recipeManager->deleteRecipeIngredients($recipeId);
-           $recipeManager->updateRecipe($recipeId, $recipeName);
-             $recipeManager->updateRecipeInstructions($recipeId, $recipeInstructions);
-        } else {
-          $recipeId = $recipeManager->addRecipe($recipeName);
-           if(!$recipeId) {
-              $errors[] = "Error al guardar la receta en la base de datos.";
-           }
-           $recipeManager->updateRecipeInstructions($recipeId, $recipeInstructions);
-        }
-       if($recipeId) {
-            foreach ($recipeIngredients as $ingredientName => $weight) {
-                $ingredient = $ingredientManager->getIngredientByName($ingredientName);
-                    if($ingredient) {
-                      $recipeManager->addRecipeIngredient($recipeId, $ingredient['id'], $weight);
+                foreach ($recipeIngredients as $ingredientName => $weight) {
+                    $ingredient = $ingredientManager->getIngredientByName($ingredientName);
+                    if ($ingredient) {
+                        $recipeManager->addRecipeIngredient((int) $recipeId, (int) $ingredient['id'], $weight);
+                    } else {
+                        throw new RuntimeException("Ingrediente no encontrado: $ingredientName");
                     }
+                }
+
+                $pdo->commit();
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                error_log("Error al guardar receta: " . $e->getMessage());
+                $errors[] = "Error al guardar la receta.";
             }
-            header('Location: index.php');
-            exit;
-        } else {
-            $errors[] = "Error al guardar la receta.";
-       }
+
+            if (empty($errors)) {
+                header('Location: index.php');
+                exit;
+            }
+        }
     }
 }
 
@@ -85,7 +117,7 @@ $editingRecipe = null;
 $editingRecipeName = '';
 $editingRecipeInstructions = '';
 if (isset($_GET['recipe'])) {
-    $editingRecipeName = $_GET['recipe'];
+    $editingRecipeName = trim((string) $_GET['recipe']);
      $recipe = $recipeManager->getRecipeByName($editingRecipeName);
      if($recipe) {
        $editingRecipe = $recipeManager->getRecipeIngredients($recipe['id']);
@@ -122,6 +154,7 @@ if (isset($_GET['recipe'])) {
 
             <?php if ($editingRecipe): ?>
                 <form method="post" class="space-y-4">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                     <input type="hidden" name="delete_recipe" value="<?= htmlspecialchars($editingRecipeName) ?>">
                     <button type="submit" onclick="return confirm('¿Estás seguro de que deseas eliminar esta receta?')" class="w-full bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
                         Eliminar Receta
@@ -130,6 +163,7 @@ if (isset($_GET['recipe'])) {
             <?php endif; ?>
 
             <form method="post" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                 <div>
                     <label for="recipe_name" class="block text-sm font-medium text-gray-700">Nombre de la Receta:</label>
                     <input type="text" name="recipe_name" id="recipe_name" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" value="<?= htmlspecialchars($editingRecipeName) ?>">
@@ -197,7 +231,7 @@ if (isset($_GET['recipe'])) {
             const ingredientName = ingredientSelector.value;
             const weight = parseFloat(weightInput.value);
 
-            if (ingredientName && weight >= 0) {
+            if (ingredientName && weight > 0) {
                 const existingIngredient = selectedIngredientsDiv.querySelector(`[data-ingredient="${ingredientName}"]`);
                 if (existingIngredient) {
                     alert('El ingrediente ya está en la lista.');
@@ -224,6 +258,15 @@ if (isset($_GET['recipe'])) {
                 });
             } else {
                 alert('Por favor, selecciona un ingrediente y un peso válido.');
+            }
+        });
+
+        document.getElementById('selected_ingredients').addEventListener('click', function(event) {
+            if (event.target.classList.contains('remove_ingredient_button')) {
+                const row = event.target.closest('.ingredient-row');
+                if (row) {
+                    row.remove();
+                }
             }
         });
 

@@ -5,12 +5,18 @@ class Database
     private $pdo;
     private $dbPath;
 
-    public function __construct($dbPath = 'recipes.sqlite')
+    public function __construct($dbPath = 'data/recipes.sqlite')
     {
         $this->dbPath = $dbPath;
         try {
+            $directory = dirname($this->dbPath);
+            if ($directory !== '.' && !is_dir($directory)) {
+                mkdir($directory, 0775, true);
+            }
+
             $this->pdo = new PDO("sqlite:" . $this->dbPath);
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $this->pdo->exec('PRAGMA foreign_keys = ON');
             $this->createTables(); // Llamar a la función para crear tablas
         } catch (PDOException $e) {
             error_log("Error de conexión a la base de datos: " . $e->getMessage());

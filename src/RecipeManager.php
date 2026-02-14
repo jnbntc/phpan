@@ -14,6 +14,65 @@ class RecipeManager
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    public function getRecipesWithDetails(?string $searchTerm = null): array
+    {
+        $params = [];
+        $where = '';
+        if ($searchTerm !== null && $searchTerm !== '') {
+            $where = "WHERE r.name LIKE :search OR EXISTS (
+                SELECT 1
+                FROM recipe_ingredients sri
+                INNER JOIN ingredients si ON si.id = sri.ingredient_id
+                WHERE sri.recipe_id = r.id AND si.name LIKE :search
+            )";
+            $params['search'] = '%' . $searchTerm . '%';
+        }
+
+        $sql = "
+            SELECT
+                r.id AS recipe_id,
+                r.name AS recipe_name,
+                r.instructions AS recipe_instructions,
+                i.id AS ingredient_id,
+                i.name AS ingredient_name,
+                i.price AS ingredient_price,
+                ri.weight AS ingredient_weight
+            FROM recipes r
+            LEFT JOIN recipe_ingredients ri ON ri.recipe_id = r.id
+            LEFT JOIN ingredients i ON i.id = ri.ingredient_id
+            $where
+            ORDER BY r.name ASC, i.name ASC
+        ";
+
+        $stmt = $this->db->getPDO()->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $recipes = [];
+        foreach ($rows as $row) {
+            $name = $row['recipe_name'];
+            if (!isset($recipes[$name])) {
+                $recipes[$name] = [
+                    'id' => (int) $row['recipe_id'],
+                    'name' => $name,
+                    'instructions' => $row['recipe_instructions'] ?? '',
+                    'ingredients' => [],
+                ];
+            }
+
+            if ($row['ingredient_id'] !== null) {
+                $recipes[$name]['ingredients'][] = [
+                    'id' => (int) $row['ingredient_id'],
+                    'name' => $row['ingredient_name'],
+                    'price' => (float) $row['ingredient_price'],
+                    'weight' => (float) $row['ingredient_weight'],
+                ];
+            }
+        }
+
+        return $recipes;
+    }
+
     public function getRecipeById(int $id): array|bool
     {
         $stmt = $this->db->getPDO()->prepare("SELECT * FROM recipes WHERE id = :id");

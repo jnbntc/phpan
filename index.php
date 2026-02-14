@@ -5,49 +5,38 @@ require_once 'src/RecipeManager.php';
 
 session_start();
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+function isValidCsrfToken(?string $token): bool
+{
+    return is_string($token)
+        && isset($_SESSION['csrf_token'])
+        && hash_equals($_SESSION['csrf_token'], $token);
+}
+
 $db = new Database();
 $ingredientManager = new IngredientManager($db);
 $recipeManager = new RecipeManager($db);
 
-// Buscar recetas (si se envió el formulario de búsqueda)
-if (isset($_GET['search'])) {
-    $searchTerm = $_GET['search'];
-    $recipes = $recipeManager->getAllRecipes();
-    $searchResults = [];
-    foreach ($recipes as $recipe) {
-        if (stripos($recipe['name'], $searchTerm) !== false) {
-            $recipe['ingredients'] = $recipeManager->getRecipeIngredients($recipe['id']);
-            $searchResults[$recipe['name']] = $recipe;
-             continue;
-        }
-        $ingredients = $recipeManager->getRecipeIngredients($recipe['id']);
-         foreach ($ingredients as $ingredient) {
-              if (stripos($ingredient['name'], $searchTerm) !== false) {
-                  $searchResults[$recipe['name']] = $recipe;
-                    $searchResults[$recipe['name']]['ingredients'] = $ingredients;
-                break;
-              }
-          }
-    }
-    $recipes = ['recipes' => $searchResults];
-} else {
-    $allRecipes = $recipeManager->getAllRecipes();
-    $recipes = ['recipes' => []];
-     foreach ($allRecipes as $recipe) {
-         $recipe['ingredients'] = $recipeManager->getRecipeIngredients($recipe['id']);
-         $recipe['instructions'] = $recipeManager->getRecipeInstructions($recipe['id']);
-        $recipes['recipes'][$recipe['name']] = $recipe;
-     }
-}
+$searchTerm = trim((string) ($_GET['search'] ?? ''));
+$recipes = ['recipes' => $recipeManager->getRecipesWithDetails($searchTerm !== '' ? $searchTerm : null)];
+$errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $errors = [];
+    if (!isValidCsrfToken($_POST['csrf_token'] ?? null)) {
+        $errors[] = "La sesión del formulario expiró. Recargá la página e intentá nuevamente.";
+    }
 
-    $selectedRecipeName = $_POST['recipe'];
-    $unitWeight = floatval($_POST['unit_weight']);
-    $quantity = intval($_POST['quantity']);
-    $prefermentPercentage = isset($_POST['preferment']) ? intval($_POST['preferment']) : 0; // Porcentaje de prefermento
+    $selectedRecipeName = trim((string) ($_POST['recipe'] ?? ''));
+    $unitWeight = (float) ($_POST['unit_weight'] ?? 0);
+    $quantity = (int) ($_POST['quantity'] ?? 0);
+    $prefermentPercentage = isset($_POST['preferment']) ? (int) $_POST['preferment'] : 0;
 
+    if ($selectedRecipeName === '') {
+        $errors[] = "Debes seleccionar una receta.";
+    }
     if ($unitWeight <= 0) {
         $errors[] = "El peso por unidad debe ser un número positivo.";
     }
@@ -59,67 +48,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
-           $selectedRecipe = $recipeManager->getRecipeByName($selectedRecipeName);
-           $recipeIngredients = $recipeManager->getRecipeIngredients($selectedRecipe['id']);
-            $recipeInstructions = $recipeManager->getRecipeInstructions($selectedRecipe['id']);
-        $totalWeight = $unitWeight * $quantity; // El peso total siempre estará en gramos
-        $ingredients = [];
+        $selectedRecipe = $recipeManager->getRecipeByName($selectedRecipeName);
+        if (!$selectedRecipe) {
+            $errors[] = "La receta seleccionada ya no existe.";
+        } else {
+            $recipeIngredients = $recipeManager->getRecipeIngredients((int) $selectedRecipe['id']);
+            $recipeInstructions = $recipeManager->getRecipeInstructions((int) $selectedRecipe['id']);
+        }
+    }
 
-        // Calcular la cantidad de cada ingrediente en el prefermento
+    if (empty($errors)) {
+        $totalWeight = $unitWeight * $quantity;
+        $ingredients = [];
+        $totalRecipeWeight = 0;
+        foreach ($recipeIngredients as $ingredient) {
+            $totalRecipeWeight += (float) $ingredient['weight'];
+        }
+
+        if ($totalRecipeWeight <= 0) {
+            $errors[] = "La receta seleccionada no tiene ingredientes válidos.";
+        }
+    }
+
+    if (empty($errors)) {
         $prefermentIngredients = [];
         if ($prefermentPercentage > 0) {
             $prefermentWeight = $totalWeight * ($prefermentPercentage / 100);
-
-            // Detectar harina alternativa y leche
             $alternativeFlour = null;
-            $liquid = 'Agua'; // Por defecto se usa agua
-             foreach ($recipeIngredients as $ingredient) {
-                 if (stripos($ingredient['name'], 'harina') !== false && $ingredient['name'] !== 'Harina') {
-                      $alternativeFlour = $ingredient['name'];
-                  }
-                  if ($ingredient['name'] === 'Leche') {
-                       $liquid = 'Leche';
-                   }
-               }
+            $liquid = 'Agua';
 
+            foreach ($recipeIngredients as $ingredient) {
+                if (stripos($ingredient['name'], 'harina') !== false && strcasecmp($ingredient['name'], 'Harina') !== 0) {
+                    $alternativeFlour = $ingredient['name'];
+                }
+                if (strcasecmp($ingredient['name'], 'Leche') === 0) {
+                    $liquid = 'Leche';
+                }
+            }
 
-            // Calcular los ingredientes del prefermento
-            $prefermentFlour = $prefermentWeight * 0.5; // 50% de harina en el prefermento
-            $prefermentLiquid = $prefermentWeight * 0.5; // 50% de líquido en el prefermento
+            $prefermentFlour = $prefermentWeight * 0.5;
+            $prefermentLiquid = $prefermentWeight * 0.5;
             if ($alternativeFlour) {
                 $prefermentIngredients[$alternativeFlour] = round($prefermentFlour, 2);
             } else {
                 $prefermentIngredients['Harina'] = round($prefermentFlour, 2);
             }
             $prefermentIngredients[$liquid] = round($prefermentLiquid, 2);
-             foreach ($recipeIngredients as $ingredient) {
-                 if($ingredient['name'] === 'Levadura') {
-                      $levaduraWeight = $totalWeight * ($ingredient['weight'] / 100);
-                     $prefermentIngredients['Levadura'] = round($levaduraWeight, 2); // 100% de levadura en el prefermento
-                 }
-              }
+
+            foreach ($recipeIngredients as $ingredient) {
+                if (strcasecmp($ingredient['name'], 'Levadura') === 0) {
+                    $levaduraWeight = $totalWeight * (((float) $ingredient['weight']) / $totalRecipeWeight);
+                    $prefermentIngredients['Levadura'] = round($levaduraWeight, 2);
+                }
+            }
         }
-     
-        // Calcular la cantidad de cada ingrediente en la masa final (descontando el prefermento)
-         $totalRecipeWeight = 0;
+
         foreach ($recipeIngredients as $ingredient) {
-            $totalRecipeWeight += $ingredient['weight'];
-        }
-         foreach ($recipeIngredients as $ingredient) {
-           // Saltar la levadura si se está usando prefermento
-              if ($prefermentPercentage > 0 && $ingredient['name'] === 'Levadura') {
+            if ($prefermentPercentage > 0 && strcasecmp($ingredient['name'], 'Levadura') === 0) {
                 continue;
             }
-           // Calcular el porcentaje y luego el peso
-             $percentage = ($ingredient['weight'] / $totalRecipeWeight) * 100;
-             $ingredientWeight = round(($percentage / 100) * $totalWeight, 2);
+            $ingredientWeight = round((((float) $ingredient['weight']) / $totalRecipeWeight) * $totalWeight, 2);
 
-               if (isset($prefermentIngredients[$ingredient['name']])) {
+            if (isset($prefermentIngredients[$ingredient['name']])) {
                 $ingredientWeight -= $prefermentIngredients[$ingredient['name']];
-                }
-               $ingredients[$ingredient['name']] = $ingredientWeight;
-              }
-
+            }
+            $ingredients[$ingredient['name']] = round(max($ingredientWeight, 0), 2);
+        }
 
         $_SESSION['calculated_recipe'] = [
             'name' => $selectedRecipeName,
@@ -127,8 +121,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'quantity' => $quantity,
             'total_weight' => round($totalWeight, 2),
             'ingredients' => $ingredients,
-            'preferment' => $prefermentIngredients, // Agregar el prefermento a la sesión
-              'instructions' => $recipeInstructions
+            'preferment' => $prefermentIngredients,
+            'instructions' => $recipeInstructions
         ];
 
         header('Location: index.php');
@@ -158,9 +152,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
 
             <form method="post" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                 <div>
                     <label for="recipe" class="block text-sm font-medium text-gray-700">Seleccionar Receta:</label>
-                    <select name="recipe" id="recipe" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                    <select name="recipe" id="recipe" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" <?= empty($recipes['recipes']) ? 'disabled' : '' ?>>
                         <?php foreach ($recipes['recipes'] as $name => $recipe): ?>
                             <option value="<?= htmlspecialchars($name) ?>"><?= htmlspecialchars($name) ?></option>
                         <?php endforeach; ?>
@@ -178,12 +173,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label for="preferment" class="block text-sm font-medium text-gray-700">Porcentaje de Prefermento (opcional):</label>
                     <input type="number" name="preferment" id="preferment" min="0" max="100" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
                 </div>
-                <button type="submit" class="w-full bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                <button type="submit" class="w-full bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" <?= empty($recipes['recipes']) ? 'disabled' : '' ?>>
                     Calcular
                 </button>
             </form>
+            <?php if (empty($recipes['recipes'])): ?>
+                <div class="bg-yellow-100 border border-yellow-300 text-yellow-800 px-4 py-3 rounded relative mt-4" role="alert">
+                    No hay recetas para mostrar. Crea una receta en "Editar/Crear Receta".
+                </div>
+            <?php endif; ?>
 
-            <?php if (isset($errors)): ?>
+            <?php if (!empty($errors)): ?>
                 <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4" role="alert">
                     <ul>
                         <?php foreach ($errors as $error): ?>
@@ -286,9 +286,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         data-total-weight="<?= $calculatedRecipe['total_weight'] ?>"
                         data-cost-per-unit="<?= number_format($costPerUnit, 2) ?>"
                         data-total-cost="<?= number_format($totalCost, 2) ?>"
-                        data-ingredients='<?= json_encode($calculatedRecipe['ingredients']) ?>'
-                         data-instructions='<?= json_encode($calculatedRecipe['instructions']) ?>'
-                        data-preferment='<?= json_encode($calculatedRecipe['preferment']) ?>'>
+                        data-ingredients='<?= htmlspecialchars(json_encode($calculatedRecipe['ingredients']), ENT_QUOTES, 'UTF-8') ?>'
+                        data-instructions='<?= htmlspecialchars(json_encode($calculatedRecipe['instructions']), ENT_QUOTES, 'UTF-8') ?>'
+                        data-preferment='<?= htmlspecialchars(json_encode($calculatedRecipe['preferment']), ENT_QUOTES, 'UTF-8') ?>'>
                         Exportar a TXT
                     </button>
                 </div>
@@ -301,59 +301,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <script>
-    document.getElementById('exportButton').addEventListener('click', function() {
-    const button = this;
+    const exportButton = document.getElementById('exportButton');
+    if (exportButton) {
+        exportButton.addEventListener('click', function() {
+            const button = this;
 
-    const title = "Resultado";
-    const recipeName = button.getAttribute('data-recipe-name');
-    const quantity = button.getAttribute('data-quantity');
-    const unitWeight = button.getAttribute('data-unit-weight');
-    const totalWeight = button.getAttribute('data-total-weight') + " g";
-    const costPerUnit = button.getAttribute('data-cost-per-unit');
-    const totalCost = button.getAttribute('data-total-cost');
-     const instructions = button.getAttribute('data-instructions');
+            const title = "Resultado";
+            const recipeName = button.getAttribute('data-recipe-name');
+            const quantity = button.getAttribute('data-quantity');
+            const unitWeight = button.getAttribute('data-unit-weight');
+            const totalWeight = button.getAttribute('data-total-weight') + " g";
+            const costPerUnit = button.getAttribute('data-cost-per-unit');
+            const totalCost = button.getAttribute('data-total-cost');
+            const instructions = JSON.parse(button.getAttribute('data-instructions') || '""');
 
-    const ingredients = JSON.parse(button.getAttribute('data-ingredients'));
-    const preferment = JSON.parse(button.getAttribute('data-preferment'));
+            const ingredients = JSON.parse(button.getAttribute('data-ingredients') || '{}');
+            const preferment = JSON.parse(button.getAttribute('data-preferment') || '{}');
 
-    let ingredientsList = '';
-    for (const ingredient in ingredients) {
-        const weight = ingredients[ingredient];
-        ingredientsList += `   ${ingredient}: ${weight.toFixed(2)} g\n`; // 3 espacios para indentar
+            let ingredientsList = '';
+            for (const ingredient in ingredients) {
+                const weight = Number(ingredients[ingredient]) || 0;
+                ingredientsList += `   ${ingredient}: ${weight.toFixed(2)} g\n`;
+            }
+
+            let content = `${title}\n\n`;
+            content += `Receta: ${recipeName}\n`;
+            content += `Cantidad: ${quantity}\n`;
+            content += `Peso por unidad: ${unitWeight} g\n`;
+            content += `Peso Total: ${totalWeight}\n`;
+            content += `Coste por unidad: $${costPerUnit}\n`;
+            content += `Coste total: $${totalCost}\n`;
+
+            if (Object.keys(preferment).length > 0) {
+                content += "\nPrefermento:\n";
+                for (const ingredient in preferment) {
+                    const weight = Number(preferment[ingredient]) || 0;
+                    content += `   ${ingredient}: ${weight} g\n`;
+                }
+            }
+
+            content += `\nIngredientes:\n${ingredientsList}`;
+            content += `\nInstrucciones:\n${instructions}`;
+
+            const fileName = recipeName.split(' ').join('_') +
+                '_' + quantity + 'u' +
+                '_' + unitWeight + 'g.txt';
+
+            const blob = new Blob([content], { type: 'text/plain' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
     }
-
-    let content = `${title}\n\n`;
-    content += `Receta: ${recipeName}\n`;
-    content += `Cantidad: ${quantity}\n`;
-    content += `Peso por unidad: ${unitWeight} g\n`;
-    content += `Peso Total: ${totalWeight}\n`;
-    content += `Coste por unidad: $${costPerUnit}\n`;
-    content += `Coste total: $${totalCost}\n`;
-
-    if (Object.keys(preferment).length > 0) {
-        content += "\nPrefermento:\n";
-        for (const ingredient in preferment) {
-            const weight = preferment[ingredient];
-            content += `   ${ingredient}: ${weight} g\n`; // 3 espacios para indentar
-        }
-    }
-
-    content += `\nIngredientes:\n${ingredientsList}`;
-     content += `\nInstrucciones:\n${instructions}`;
-
-    // Separar palabras del nombre con guiones bajos
-    const fileName = recipeName.split(' ').join('_') +
-                    '_' + quantity + 'u' +
-                    '_' + unitWeight + 'g.txt';
-
-    const blob = new Blob([content], { type: 'text/plain' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-});
     </script>
 </body>
 </html>
